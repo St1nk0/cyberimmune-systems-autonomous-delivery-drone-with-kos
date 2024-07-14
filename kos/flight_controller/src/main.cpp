@@ -169,6 +169,40 @@ int sendCheckMessage(char *method, char *response, char *errorMessage, uint8_t d
     return 1;
 };
 
+
+int sendLogMessage(char* log)
+{
+    char response[1024] ={0};
+    char errorMessage[1024] = {0};
+    char message[512] = {0};
+    char signature[257] = {0};
+    char request[1024] = {0};
+    snprintf(message, 512, "/api/logs?%s&log=%s", BOARD_ID, log);
+    
+    if (!signMessage(message, signature))
+    {
+        fprintf(stderr, "[%s] Warning: Failed to sign %s message at Credential Manager. Trying again in %ds\n", ENTITY_NAME, errorMessage);
+        return false;
+    }
+
+    snprintf(request, 1024, "%s&sig=0x%s", message, signature);
+    
+    if (!sendRequest(request, response))
+    {
+        fprintf(stderr, "[%s] Warning: Failed to send %s request through Server Connector. Trying again in %ds\n", ENTITY_NAME, errorMessage);
+        return false;
+    }
+    fprintf(stderr, "[%s] Info: Отправлен запрос прям ваще запрос 3\n", ENTITY_NAME);
+    uint8_t authenticity = 0;
+    if (!checkSignature(response, authenticity) || !authenticity)
+    {
+        fprintf(stderr, "[%s] Warning: Failed to check signature of %s response received through Server Connector. Trying again in %ds\n", ENTITY_NAME, errorMessage);
+        return false;
+    }
+
+    return 1;
+};
+
 // вычислить допустимые погрешности, заменить 10
 /* BordersName checkBorders(const BordersCoords* bordersCoords, float currentLat, float currentLong, float border) {
     if (bordersCoords->left_external + border < currentLong) 
@@ -218,8 +252,8 @@ void parseMissionPoints(){
             break;
         }
     }
-    endWaypoint = commandsCount-1;
-    speedWaypoint = 7;
+    endWaypoint = commandsCount-2;
+    speedWaypoint = barrierWaypoint + 1;
 };
 
 int main(void)
@@ -314,6 +348,7 @@ int main(void)
     is_drop = false;
     is_killed = false;
     
+    
     /* DroneCoords droneCoords;
     BordersCoords bordersCoords;
     updateCoords(&droneCoords, static_cast<float>(startLat), static_cast<float>(startLong)); */
@@ -323,7 +358,11 @@ int main(void)
         if(!checkBorders(&bordersCoords, droneCoords.currentLat, droneCoords.currentLong))
             returnToBorders(); */
 
-        fprintf(stderr, "[%s] is_koll : [%s]\n", ENTITY_NAME, is_killed ? "true" : "false");
+        fprintf(stderr, "[%s] Dron is_kill : [%s]\n", ENTITY_NAME, is_killed ? "true" : "false");
+
+        char logs[512] = {0};
+        snprintf(logs, 512, "[%s] Dron is_kill : [%s]\n", ENTITY_NAME, is_killed ? "true" : "false");
+        sendLogMessage(logs);
 
         printCoordsConsole();
 
@@ -332,9 +371,9 @@ int main(void)
 
         orvdPauseControle();
 
-        cargoControle();
-        
         checkBooling();
+
+        cargoControle();
 
         speedPerSecControle();
 
@@ -373,8 +412,9 @@ double getDistanseBetweenPoint(int32_t longPrev, int32_t latPrev, int32_t longCu
 void kill() {
     if(!is_killed){
         is_killed = true;
-        setKillSwitch(true);
+        setKillSwitch(0);
         fprintf(stderr, "Info: KILLED");
+
     }
 }
 
@@ -432,7 +472,7 @@ bool speedTrackCheck() {
 
 void checkBooling() {
     fprintf(stderr, "[%s] kill: Попали в убивцу\n", ENTITY_NAME);
-    if(!is_killed && pointerWaypoint >= 13) {
+    if(!is_killed && pointerWaypoint >= endWaypoint) {
         int32_t curLong, curLat, curAlt;
         double distanceBetweenPointCurr;
         getCoords(curLat, curLong, curAlt);
@@ -500,6 +540,10 @@ void reachedWaypoint() {
         fprintf(stderr, "[%s] Info: Waypoint %u reached\n", ENTITY_NAME, pointerWaypoint);
         ++pointerWaypoint;
     }
+
+    char logs[512] = {0};
+    snprintf(logs, 512,"[%s] distance: %f point:%d  \n", ENTITY_NAME, distanceToWaypoint, pointerWaypoint);
+    sendLogMessage(logs);
 }
 
 void missionHoldPoint()
@@ -594,7 +638,7 @@ void speedPerSecControle()
         changeSpeed(1);
         return;
     }
-    if(speedTrackCheck()){
+    /* if(speedTrackCheck()){
         if((uint32_t)round(speedCheck) > 5) {
             changeSpeed(5);
         }
@@ -602,12 +646,12 @@ void speedPerSecControle()
             changeSpeed(5);
         }
         return;
-    }
-    if (speedCheck > MAX_DRONE_SPEED)
+    } */
+    if (round(speedCheck) > MAX_DRONE_SPEED)
     {
         changeSpeed(MAX_DRONE_SPEED);
     }
-    if (speedCheck < MAX_DRONE_SPEED)
+    if (round(speedCheck) < MAX_DRONE_SPEED)
     {
         changeSpeed(MAX_DRONE_SPEED);
     }
@@ -649,7 +693,7 @@ int heightCheck()
     int32_t lant, lon, alt;
     getCoords(lant, lon, alt);
 
-    if(pointerWaypoint == commandsCount) {
+    if(pointerWaypoint == endWaypoint) {
         fprintf(stderr, "[%s] Последний поинт высота\n", ENTITY_NAME);
         if(!getCoords(lant, lon, alt)) {
             fprintf(stderr, "[%s] Заблокало\n", ENTITY_NAME);
