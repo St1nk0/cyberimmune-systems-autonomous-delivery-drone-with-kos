@@ -366,7 +366,7 @@ int main(void)
 
         printCoordsConsole();
 
-        /*heightCheck();*/
+        heightCheck();
         reachedWaypoint();        
 
         orvdPauseControle();
